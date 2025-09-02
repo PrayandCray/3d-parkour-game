@@ -4,6 +4,7 @@ extends CharacterBody3D
 @onready var camera: Camera3D = $Head/Camera3D
 @onready var raycast: RayCast3D = $Head/RayCast3D
 @onready var collision_shape: CollisionShape3D = $CollisionShape3D
+@onready var mesh: MeshInstance3D = $MeshInstance3D
 
 const WALK_SPEED = 5.0
 const SPRINT_SPEED = 8.0 
@@ -27,9 +28,9 @@ func _ready():
 
 func _unhandled_input(event):
 	if event is InputEventMouseMotion:
-		head.rotate_y(-event.relative.x * SENSITIVITY)
-		camera.rotate_x(-event.relative.y * SENSITIVITY)
-		camera.rotation.x = clamp(camera.rotation.x, deg_to_rad(-40), deg_to_rad(60))
+		rotate_object_local(Vector3.UP, -event.relative.x * SENSITIVITY)
+		head.rotate_x(-event.relative.y * SENSITIVITY)
+		head.rotation.x = clamp(head.rotation.x, deg_to_rad(-40), deg_to_rad(60))
 
 func _physics_process(delta: float) -> void:
 	
@@ -45,44 +46,18 @@ func _physics_process(delta: float) -> void:
 		jump_stored = false
 
 	var input_dir := Input.get_vector("Strafe Left", "Strafe Right", "Forward", "Strafe Backwards")
-	var direction := (head.transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
+	var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
 
 	#sprint check
 	if Input.is_action_pressed("Sprint"):
 		speed = SPRINT_SPEED
 	else:
 		speed = WALK_SPEED
-	
 		
 	if is_on_floor():
-			#slide 
-		if Input.is_action_just_pressed("Slide"):
-			speed = SPRINT_SPEED
-			
 		
-		elif Input.is_action_pressed("Slide"):
-			sliding = true
-			# horizon align
-			
-			target_height = 0.36
-			scale.y = lerp(scale.y, target_height, delta * smooth_speed)
-			
-			camera.rotation.x = clamp(camera.rotation.x, deg_to_rad(-30), deg_to_rad(30))
-			# roll tilt
-			camera.rotation.z = lerp(camera.rotation.z, deg_to_rad(10), delta * 6.0)
-			velocity.x = lerp(velocity.x, 0.0, delta * 1)
-			velocity.z = lerp(velocity.z, 0.0, delta * 1)
-			if get_slide_collision_count() > 3:
-				velocity.z = 0
-				velocity.x = 0
+			slide(delta)
 
-		else:
-			sliding = false
-			scale.y = 1
-			camera.rotation.z = lerp(camera.rotation.z, 0.0, delta * 6.0)
-			collision_shape.scale.y = 1
-			speed = WALK_SPEED
-		
 			if direction:
 				velocity.x = lerp(velocity.x, direction.x * speed, delta * 7.0)
 				velocity.z = lerp(velocity.z, direction.z * speed, delta * 7.0)
@@ -115,6 +90,7 @@ func _physics_process(delta: float) -> void:
 		if raycast.is_colliding() and Input.is_action_just_pressed("Jump") and velocity.y < 0:
 			var hit_point = raycast.get_collision_point()
 			var distance = raycast.global_position.distance_to(hit_point)
+			slide(delta)
 			if distance < 0.75:
 				jump_stored = true
 	
@@ -122,6 +98,43 @@ func _physics_process(delta: float) -> void:
 	
 func headbob(time) -> Vector3:
 	var pos = Vector3.ZERO
-	pos.y = sin(time * BOB_FREQ) * BOB_AMP
-	pos.x = sin(time * BOB_FREQ / 2) * BOB_AMP
+	if not Input.is_action_pressed("Slide"):
+		pos.y = sin(time * BOB_FREQ) * BOB_AMP
+		pos.x = sin(time * BOB_FREQ / 2) * BOB_AMP
 	return pos
+	
+func slide(delta):
+	var slide_pos = false
+	
+	if Input.is_action_just_pressed("Slide"):
+		print("sliding")
+		speed = SPRINT_SPEED
+		if slide_pos == false:
+			collision_shape.rotate_object_local(Vector3.RIGHT, deg_to_rad(85))
+			mesh.rotate_object_local(Vector3.RIGHT, deg_to_rad(85))
+			slide_pos = true
+	
+	elif Input.is_action_pressed("Slide"):
+		sliding = true
+		if slide_pos == true:
+			collision_shape.rotate_object_local(Vector3.RIGHT, deg_to_rad(85))
+			mesh.rotate_object_local(Vector3.RIGHT, deg_to_rad(85))
+			slide_pos = false
+		
+		# roll tilt
+		camera.rotation.z = lerp(camera.rotation.z, deg_to_rad(15), delta * 6.0)
+		
+		velocity.x = lerp(velocity.x, 0.0, delta * 1)
+		velocity.z = lerp(velocity.z, 0.0, delta * 1)
+		if get_slide_collision_count() > 3:
+			velocity.z = 0
+			velocity.x = 0
+			
+	else:
+		collision_shape.rotation = Vector3.ZERO
+		mesh.rotation = Vector3.ZERO
+		slide_pos = false
+		sliding = false
+		camera.rotation.z = lerp(camera.rotation.z, 0.0, delta * 6.0)
+		collision_shape.scale.y = 1
+		speed = WALK_SPEED
