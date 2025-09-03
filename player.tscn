@@ -16,6 +16,14 @@ mesh = SubResource("CapsuleMesh_onrkg")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("ConvexPolygonShape3D_i3pqv")
 
+[node name="Wall Raycasts" type="Node3D" parent="."]
+
+[node name="Left Raycast" type="RayCast3D" parent="Wall Raycasts"]
+transform = Transform3D(0.642788, 0.766044, 0, -0.766044, 0.642788, 0, 0, 0, 1, -0.5, 0, 0)
+
+[node name="Right Raycast" type="RayCast3D" parent="Wall Raycasts"]
+transform = Transform3D(-0.642788, -0.766044, 6.69697e-08, -0.766044, 0.642788, -5.61943e-08, 3.82137e-15, -8.74228e-08, -1, 0.512266, 0, 0)
+
 [node name="Head" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.60017, 0)
 
