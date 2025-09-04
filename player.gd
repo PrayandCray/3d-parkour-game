@@ -1,5 +1,6 @@
 extends CharacterBody3D
 
+@onready var screen_output: CanvasLayer = $OnscreenOutput
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
 @onready var raycast: RayCast3D = $Head/RayCast3D
@@ -18,6 +19,9 @@ const BOB_AMP = 0.08
 const BASE_FOV = 72.0
 const FOV_CHANGE = 1.5
 
+var collision_shape_check = true
+var t_bob_check = true
+var state: PlayerState = PlayerState.MOVING
 var speed: float = WALK_SPEED
 var current_height = 1
 var target_height
@@ -31,7 +35,7 @@ enum PlayerState {
 	SLIDE,
 	MOVING
 }
-var state: PlayerState = PlayerState.MOVING
+
 
 func _ready():
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
@@ -44,7 +48,6 @@ func _unhandled_input(event):
 		head.rotation.x = clamp(head.rotation.x, deg_to_rad(-40), deg_to_rad(60))
 
 func _physics_process(delta: float) -> void:
-	print(state)
 	velocity += get_gravity() * delta
 
 	match state:
@@ -54,7 +57,7 @@ func _physics_process(delta: float) -> void:
 			state_slide(delta)
 		PlayerState.MOVING:
 			state_moving(delta)
-	
+
 	# for leaving game
 	if Input.is_action_just_pressed("Escape"):
 		get_tree().quit()
@@ -62,44 +65,46 @@ func _physics_process(delta: float) -> void:
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	if Input.is_action_just_pressed("ui_down"):
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-		
-	if Input.is_action_just_released("Slide"):
-		sliding = false
-		print("released")
-		collision_shape.rotation = Vector3.ZERO
-		mesh.rotation = Vector3.ZERO
-		state = PlayerState.MOVING
+
+	if Input.is_action_just_released("Slide") and is_on_floor():
+		reset_pos(delta)
 
 	move_and_slide()
 
 func state_moving(delta: float) -> void:
 	handle_movement(delta)
-	
+
 	if not is_on_floor() and not Input.is_action_just_pressed("Slide"):
 		state = PlayerState.IN_AIR
-	elif Input.is_action_just_pressed("Slide"):
+	elif Input.is_action_just_pressed("Slide") and is_on_floor():
 		state = PlayerState.SLIDE
 
 func state_in_air(delta: float) -> void:
 	collision_shape.rotation = Vector3.ZERO
 	handle_movement(delta)
-	
+
 	if is_on_floor() and not Input.is_action_pressed("Slide"):
+		collision_shape_check = false
 		state = PlayerState.MOVING
 
 func state_slide(delta: float) -> void:
 	handle_slide(delta)
-	
+
 	if not is_on_floor() and not Input.is_action_pressed("Slide"):
 		state = PlayerState.IN_AIR
 	elif not Input.is_action_pressed("Slide"):
-		sliding = false
-		collision_shape.rotation = Vector3.ZERO
-		mesh.rotation = Vector3.ZERO
-		state = PlayerState.MOVING
-		collision_shape.disabled = false
-		slide_collision_shape.disabled = true
-	
+		reset_pos(delta)
+
+func jump(delta: float) -> void:
+	velocity.y = JUMP_VELOCITY
+	jump_stored = false
+
+func reset_pos(delta: float) -> void:
+	sliding = false 
+	mesh.rotation = Vector3.ZERO
+	collision_shape.disabled = false
+	slide_collision_shape.disabled = true
+	state = PlayerState.MOVING
 
 func headbob(time) -> Vector3:
 	var pos = Vector3.ZERO
@@ -107,35 +112,66 @@ func headbob(time) -> Vector3:
 		pos.y = sin(time * BOB_FREQ) * BOB_AMP
 		pos.x = sin(time * BOB_FREQ / 2) * BOB_AMP
 	return pos
-	
+
 func handle_movement(delta):
+	if collision_shape_check == false:
+		reset_pos(delta)
+		collision_shape_check = true
+
 	var input_dir := Input.get_vector("Strafe Left", "Strafe Right", "Forward", "Strafe Backwards")
 	var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
+
+	if is_on_floor():
+		velocity.x = lerp(velocity.x, direction.x * speed, delta * 7.0)
+		velocity.z = lerp(velocity.z, direction.z * speed, delta * 7.0)
+	else:
+		velocity.x = lerp(velocity.x, direction.x * speed, delta * 0.8)
+		velocity.z = lerp(velocity.z, direction.z * speed, delta * 0.8)
 	
-	velocity.x = lerp(velocity.x, direction.x * speed, delta * 7.0)
-	velocity.z = lerp(velocity.z, direction.z * speed, delta * 7.0)
-	
+	var velocity_clamped = clamp(velocity.length(), 0.5, SPRINT_SPEED * 2)
+	var target_fov = BASE_FOV + FOV_CHANGE * velocity_clamped
+	camera.fov = lerp(camera.fov, target_fov, delta * 8)
+
 	camera.rotation.z = lerp(camera.rotation.z, 0.0, delta * 6.0)
-	
+
 	if Input.is_action_just_pressed("Sprint"):
 		speed = SPRINT_SPEED
 	if Input.is_action_just_released("Sprint"):
 		speed = WALK_SPEED
-	
+
 	if Input.is_action_just_pressed("Jump") and is_on_floor() and sliding == false or jump_stored == true:
 		velocity.y = JUMP_VELOCITY
 		jump_stored = false
-	
+
 	# headbob
+	
 	if direction.length() > 0.01 and is_on_floor() and state != PlayerState.SLIDE:
-		t_bob += delta * velocity.length()
-		camera.transform.origin = headbob(t_bob)
+		if t_bob_check == false:
+			t_bob = 0
+			t_bob_check = true
+		else:
+			t_bob += delta * velocity.length()
+			camera.transform.origin = headbob(t_bob)
 	else:
 		camera.transform.origin = camera.transform.origin.lerp(Vector3.ZERO, delta * 5.0)
-	
+
 	if state == PlayerState.MOVING and Input.is_action_just_pressed("Slide") and is_on_floor():
 		state = PlayerState.SLIDE
+
+	if direction.length() > 0.001:
+		var target = 0.0
+		var current_cam_y = camera.transform.origin.y
+		var current_cam_x = camera.transform.origin.x
+
+		camera.transform.origin.y = lerp(current_cam_y, target, delta * smooth_speed)
+		camera.transform.origin.x = lerp(current_cam_x, target, delta * smooth_speed)
+
+		velocity.x = lerp(velocity.x, direction.x * speed, delta * 7.0)
+		velocity.z = lerp(velocity.z, direction.z * speed, delta * 7.0)
 		
+	else:
+		t_bob_check = false
+
 func handle_slide(delta):
 	collision_shape.disabled = true
 	slide_collision_shape.disabled = false
@@ -144,9 +180,20 @@ func handle_slide(delta):
 	velocity.z = lerp(velocity.z, 0.0, delta * 0.8)
 	
 	sliding = true
-	camera.rotation.z = lerp(camera.rotation.z, deg_to_rad(15), delta * 6.0)
-	collision_shape.rotation.x = deg_to_rad(85)
-	mesh.rotation.x = deg_to_rad(85)
+	camera.rotation.z = lerp(camera.rotation.z, deg_to_rad(15), delta * 8.0)
+	camera.transform.origin.x = -0.4
+	camera.transform.origin.y = -0.1 
+	
+	# lerp slide
+	var target_rot = deg_to_rad(85)
+	var lerp_speed = 6.0
+	
+	mesh.rotation.x = lerp_angle(mesh.rotation.x, target_rot, lerp_speed * delta)
+	
+	if Input.is_action_just_pressed("Jump") and is_on_floor():
+		reset_pos(delta)
+		state = PlayerState.MOVING
+		jump(delta)
 
 func start_wallrun(normal: Vector3) -> void:
 	var wall_forward = velocity - normal * velocity.dot(normal)
