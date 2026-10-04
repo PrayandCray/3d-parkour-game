@@ -1,6 +1,7 @@
-[gd_scene load_steps=6 format=3 uid="uid://bfifbtr7gqej3"]
+[gd_scene format=3 uid="uid://bfifbtr7gqej3"]
 
 [ext_resource type="PackedScene" uid="uid://mxixbnrdjvtt" path="res://player.tscn" id="1_ig7tw"]
+[ext_resource type="PackedScene" uid="uid://34gh1umbt0y4" path="res://karlson.tscn" id="2_0xm2m"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_7dm0k"]
 sky_horizon_color = Color(0.662243, 0.671743, 0.686743, 1)
@@ -15,77 +16,18 @@ sky = SubResource("Sky_ig7tw")
 tonemap_mode = 2
 glow_enabled = true
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ig7tw"]
-albedo_color = Color(1, 0.729412, 1, 1)
+[node name="Main" type="Node" unique_id=624750089]
 
-[node name="Main" type="Node"]
-
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=707333385]
 transform = Transform3D(-0.866025, -0.433013, 0.25, 0, 0.5, 0.866025, -0.5, 0.75, -0.433013, 0, -1, 0)
 light_indirect_energy = 0.5
 light_volumetric_fog_energy = 0.778
 shadow_enabled = true
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1350307586]
 environment = SubResource("Environment_0xm2m")
 
-[node name="CSGBox3D" type="CSGBox3D" parent="."]
-transform = Transform3D(7.29837, 0, 0, 0, 7.29837, 0, 0, 0, 7.29837, 10.9476, 0.000499964, -10.9476)
-use_collision = true
-size = Vector3(4, 0.001, 6)
+[node name="Player" parent="." unique_id=1173711504 instance=ExtResource("1_ig7tw")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.2919273, 1.7703419, -0.28241777)
 
-[node name="Player" parent="." instance=ExtResource("1_ig7tw")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.55727, 1.0507, -8.23947)
-
-[node name="Jump Blocks" type="Node3D" parent="."]
-
-[node name="CSGBox3D2" type="CSGBox3D" parent="Jump Blocks"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14.8256, 0.515189, 0)
-use_collision = true
-material = SubResource("StandardMaterial3D_ig7tw")
-
-[node name="CSGBox3D3" type="CSGBox3D" parent="Jump Blocks"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14.8256, 0.943961, 2.26576)
-use_collision = true
-size = Vector3(1, 1.85754, 1)
-material = SubResource("StandardMaterial3D_ig7tw")
-
-[node name="CSGBox3D4" type="CSGBox3D" parent="Jump Blocks"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14.8256, 0.582603, 4.62883)
-use_collision = true
-size = Vector3(1, 1.13483, 1)
-material = SubResource("StandardMaterial3D_ig7tw")
-
-[node name="CSGBox3D2" type="CSGBox3D" parent="Jump Blocks/CSGBox3D4"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0689411, -0.154751, -12.1936)
-use_collision = true
-material = SubResource("StandardMaterial3D_ig7tw")
-
-[node name="CSGBox3D3" type="CSGBox3D" parent="Jump Blocks/CSGBox3D4"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0689411, 0.274021, -9.92786)
-use_collision = true
-size = Vector3(1, 1.85754, 1)
-material = SubResource("StandardMaterial3D_ig7tw")
-
-[node name="CSGBox3D4" type="CSGBox3D" parent="Jump Blocks/CSGBox3D4"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0689411, -0.0873373, -7.5648)
-use_collision = true
-size = Vector3(1, 1.13483, 1)
-material = SubResource("StandardMaterial3D_ig7tw")
-
-[node name="Wall Jump Stuff" type="Node3D" parent="."]
-
-[node name="CSGBox3D" type="CSGBox3D" parent="Wall Jump Stuff"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.02591, 2.65007, -2.37915)
-use_collision = true
-size = Vector3(1, 5.17188, 5.7583)
-
-[node name="CSGBox3D2" type="CSGBox3D" parent="Wall Jump Stuff"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.25664, 2.55602, 2.25621)
-use_collision = true
-size = Vector3(1, 4.98376, 5.7583)
-
-[node name="CSGBox3D3" type="CSGBox3D" parent="Wall Jump Stuff"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.25664, 2.52965, -7.67154)
-use_collision = true
-size = Vector3(1, 4.93103, 5.7583)
+[node name="Karlson" parent="." unique_id=927660781 instance=ExtResource("2_0xm2m")]

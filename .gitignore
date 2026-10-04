@@ -6,3 +6,4 @@ export_presents
 player.gd.uid
 Test.tscn
 exports/
+addons/
