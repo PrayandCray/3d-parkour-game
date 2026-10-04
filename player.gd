@@ -21,24 +21,28 @@ const BASE_FOV = 72.0
 const FOV_CHANGE = 1.5
 const SLIDE_BOOST = 4.0
 const SLIDE_MIN_SPEED = 8.0
-const SLIDE_FRICTION = 0.5
+const SLIDE_FRICTION = 1.25
 const SLIDE_SLOPE_ACCEL = 20.0
 const SLIDE_SLOPE_FRICTION_REDUCTION = 1.0
 const SLIDE_MAX_SPEED = 18.0
-const SLIDE_JUMP_BOOST = 1.6
-const SLIDE_JUMP_MAX_SPEED = 24.0
+const SLIDE_JUMP_BOOST = 1.3
+const SLIDE_JUMP_MAX_SPEED = 15.0
 const SLIDE_JUMP_DIVE_GRACE = 0.35
 const SLIDE_CAM_OFFSET = Vector3(0.0, -0.4, 0.0)
 const SLIDE_BODY_TILT = 85.0
+const GROUND_ACCELERATION = 30.0
+const AIR_ACCELERATION = 4.0
+const DIVE_ACCELERATION = 3.0
+const GROUND_FRICTION = 1.2
 const WALLRUN_SPEED = 9.0
 const WALLRUN_MIN_SPEED = 3.0
 const WALLRUN_MAX_TIME = 2.0
 const WALLRUN_GRAVITY = 2.0
-const WALL_STICK_FORCE = 12.0
+const WALL_STICK_FORCE = 10.0
 const WALLRUN_COYOTE = 0.15
 const WALL_NORMAL_MAX_Y = 0.25
 const WALL_JUMP_UP = 5.0
-const WALL_JUMP_AWAY = 7.0
+const WALL_JUMP_AWAY = 3.0
 const WALL_JUMP_ALONG_KEEP = 0.8
 const WALL_JUMP_LOCKOUT = 0.35
 const WALLRUN_COOLDOWN = 0.3
@@ -59,6 +63,8 @@ var target_height
 var sliding = false
 var slide_speed = 0.0
 var slide_jump_timer = 0.0
+var dive_slide_landing: bool = false
+var dive_landing_velocity: Vector3 = Vector3.ZERO
 var jump_stored = false
 var t_bob = 0.0
 var smooth_speed = 5
@@ -116,6 +122,8 @@ func _physics_process(delta: float) -> void:
 	# for leaving game
 	if Input.is_action_just_pressed("Escape"):
 		get_tree().quit()
+	if Input.is_action_just_pressed("Respawn"):
+		position = Vector3(-2.29,1.77,-0.8)
 	
 	# mouse hide/unhide
 	if Input.is_action_just_pressed("ui_up"):
@@ -138,11 +146,23 @@ func state_moving(delta: float) -> void:
 		state = PlayerState.SLIDE
 
 func dir_move(delta: float) -> void:
-	var input_dir = Input.get_vector("Strafe Left", "Strafe Right", "Forward", "Strafe Backwards")
-	var direction = (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
-	
-	velocity.x = lerp(velocity.x, direction.x * speed, delta * 0.825)
-	velocity.z = lerp(velocity.z, direction.z * speed, delta * 0.825)
+	_apply_horizontal_movement(delta, DIVE_ACCELERATION, 0.0)
+
+func _apply_horizontal_movement(delta: float, acceleration: float, friction: float) -> void:
+	var input_dir: Vector2 = Input.get_vector("Strafe Left", "Strafe Right", "Forward", "Strafe Backwards")
+	var direction: Vector3 = (transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)).normalized()
+	var horizontal_velocity: Vector3 = Vector3(velocity.x, 0.0, velocity.z)
+
+	if direction.length_squared() > 0.001:
+		# Redirect toward input without lowering existing speed during a state change.
+		var target_speed: float = maxf(horizontal_velocity.length(), speed)
+		var target_velocity: Vector3 = direction * target_speed
+		horizontal_velocity = horizontal_velocity.move_toward(target_velocity, acceleration * delta)
+	elif friction > 0.0:
+		horizontal_velocity = horizontal_velocity.move_toward(Vector3.ZERO, friction * delta * 20)
+
+	velocity.x = horizontal_velocity.x
+	velocity.z = horizontal_velocity.z
 
 func state_in_air(delta: float) -> void:
 	collision_shape.rotation = Vector3.ZERO
@@ -184,9 +204,9 @@ func state_dive(delta: float) -> void:
 			slide_jump_cam_reset = false
 
 	if is_on_floor() and Input.is_action_pressed("Slide"):
-		# land straight into the slide. The dive already uses the slide collider,
-		# so we must NOT reset_pos here: that swaps colliders back and forth and
-		# pops the body. Keeping the shape also keeps the dive's momentum.
+		# Preserve the exact incoming velocity for the first slide physics tick.
+		dive_slide_landing = true
+		dive_landing_velocity = velocity
 		state = PlayerState.SLIDE
 	elif is_on_floor() and not Input.is_action_pressed("Slide"):
 		reset_pos(delta)
@@ -251,9 +271,9 @@ func jump(delta: float) -> void:
 	jump_stored = false
 
 func sprint_check(delta: float) -> void:
-	if Input.is_action_just_pressed("Sprint"):
+	if Input.is_action_pressed("Sprint") and Input.is_action_pressed("Movement"):
 		speed = SPRINT_SPEED
-	if Input.is_action_just_released("Sprint"):
+	else:
 		speed = WALK_SPEED
 
 func reset_pos(delta: float) -> void:
@@ -270,43 +290,35 @@ func headbob(time) -> Vector3:
 		pos.x = sin(time * BOB_FREQ / 2) * BOB_AMP
 	return pos
 
-func handle_movement(delta):
+func handle_movement(delta: float) -> void:
 	if collision_shape_check == false:
 		reset_pos(delta)
 		collision_shape_check = true
 
-	var input_dir := Input.get_vector("Strafe Left", "Strafe Right", "Forward", "Strafe Backwards")
-	var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
+	var input_dir: Vector2 = Input.get_vector("Strafe Left", "Strafe Right", "Forward", "Strafe Backwards")
+	var direction: Vector3 = (transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)).normalized()
+	var grounded: bool = is_on_floor()
+	var can_control_air: bool = wall_jump_timer <= 0.0 and slide_jump_timer <= 0.0
 
-	if is_on_floor():
-		velocity.x = lerp(velocity.x, direction.x * speed, delta * 7.0)
-		velocity.z = lerp(velocity.z, direction.z * speed, delta * 7.0)
-		
-		var velocity_clamped = clamp(velocity.length(), 0.5, SPRINT_SPEED * 2)
-		var target_fov = BASE_FOV + FOV_CHANGE * velocity_clamped
-		camera.fov = lerp(camera.fov, target_fov, delta * 8)
-		
+	if grounded:
+		_apply_horizontal_movement(delta, GROUND_ACCELERATION, GROUND_FRICTION)
 	else:
-		if wall_jump_timer <= 0.0 and slide_jump_timer <= 0.0:
-			velocity.x = lerp(velocity.x, direction.x * speed, delta * 0.825)
-			velocity.z = lerp(velocity.z, direction.z * speed, delta * 0.825)
-		
-		var target_fov = BASE_FOV + FOV_CHANGE
-		camera.fov = lerp(camera.fov, target_fov, delta * 8)
+		if can_control_air:
+			_apply_horizontal_movement(delta, AIR_ACCELERATION, 1.2)
 
-	camera.rotation.z = lerp(camera.rotation.z, 0.0, delta * 6.0)
+	var target_fov: float = BASE_FOV + (FOV_CHANGE * clampf(Vector2(velocity.x, velocity.z).length(), 0.5, SPRINT_SPEED * 2.0) if grounded else FOV_CHANGE)
+	camera.fov = lerpf(camera.fov, target_fov, delta * 8.0)
+	camera.rotation.z = lerpf(camera.rotation.z, 0.0, delta * 6.0)
 
 	sprint_check(delta)
 
-	if Input.is_action_just_pressed("Jump") and is_on_floor() and sliding == false or jump_stored == true:
+	if (Input.is_action_just_pressed("Jump") and grounded and not sliding) or jump_stored:
 		velocity.y = JUMP_VELOCITY
 		jump_stored = false
 
-	# headbob
-	
-	if direction.length() > 0.01 and is_on_floor() and state != PlayerState.SLIDE:
-		if t_bob_check == false:
-			t_bob = 0
+	if direction.length() > 0.01 and grounded and state != PlayerState.SLIDE:
+		if not t_bob_check:
+			t_bob = 0.0
 			t_bob_check = true
 		else:
 			t_bob += delta * velocity.length()
@@ -314,21 +326,12 @@ func handle_movement(delta):
 	else:
 		camera.transform.origin = camera.transform.origin.lerp(Vector3.ZERO, delta * 5.0)
 
-	if state == PlayerState.MOVING and Input.is_action_just_pressed("Slide") and is_on_floor():
+	if state == PlayerState.MOVING and Input.is_action_just_pressed("Slide") and grounded:
 		state = PlayerState.SLIDE
 
 	if direction.length() > 0.001:
-		var target = 0.0
-		var current_cam_y = camera.transform.origin.y
-		var current_cam_x = camera.transform.origin.x
-
-		camera.transform.origin.y = lerp(current_cam_y, target, delta * smooth_speed)
-		camera.transform.origin.x = lerp(current_cam_x, target, delta * smooth_speed)
-
-		if is_on_floor() or (wall_jump_timer <= 0.0 and slide_jump_timer <= 0.0):
-			velocity.x = lerp(velocity.x, direction.x * speed, delta * 7.0)
-			velocity.z = lerp(velocity.z, direction.z * speed, delta * 7.0)
-		
+		camera.transform.origin.y = lerpf(camera.transform.origin.y, 0.0, delta * smooth_speed)
+		camera.transform.origin.x = lerpf(camera.transform.origin.x, 0.0, delta * smooth_speed)
 	else:
 		t_bob_check = false
 
@@ -353,9 +356,8 @@ func slide_boost():
 			velocity.z
 		)
 
-	if horizontal_velocity.length() < SLIDE_MIN_SPEED:
+	if direction.length() > 0.1 and horizontal_velocity.length() < SLIDE_MIN_SPEED:
 		horizontal_velocity = direction * SLIDE_MIN_SPEED
-
 		velocity.x = horizontal_velocity.x
 		velocity.z = horizontal_velocity.z
 
@@ -379,11 +381,25 @@ func slide_jump(delta: float) -> void:
 		velocity.x = dir.x * burst_speed
 		velocity.z = dir.z * burst_speed
 
-func handle_slide(delta):
+func handle_slide(delta: float) -> void:
 	collision_shape.disabled = true
 	slide_collision_shape.disabled = false
-	
-	# slope physics: gravity projected onto the floor surface points downhill
+
+	if dive_slide_landing:
+		velocity.x = dive_landing_velocity.x * 2
+		velocity.z = dive_landing_velocity.z * 2
+		var landing_normal: Vector3 = get_floor_normal()
+		if landing_normal.y > 0.2:
+			velocity.y = -(velocity.x * landing_normal.x + velocity.z * landing_normal.z) / landing_normal.y
+		else:
+			velocity.y = 0.0
+		dive_slide_landing = false
+		sliding = true
+		camera.rotation.z = lerpf(camera.rotation.z, deg_to_rad(15.0), delta * 8.0)
+		mesh.rotation.x = lerp_angle(mesh.rotation.x, deg_to_rad(SLIDE_BODY_TILT), delta * 6.0)
+		camera.transform.origin = camera.transform.origin.lerp(SLIDE_CAM_OFFSET, delta * 10.0)
+		return
+
 	var floor_normal := get_floor_normal()
 	var slope_vec := Vector3.DOWN - floor_normal * Vector3.DOWN.dot(floor_normal)
 	var slope := clampf(slope_vec.length(), 0.0, 1.0)  # sin of the slope angle
@@ -391,17 +407,14 @@ func handle_slide(delta):
 	if downhill.length() > 0.001:
 		downhill = downhill.normalized()
 
-	# accelerate downhill, steeper slopes gain more momentum
-	if slope > 0.01:
+	if slope > 0.1:
 		velocity.x += downhill.x * SLIDE_SLOPE_ACCEL * slope * delta
 		velocity.z += downhill.z * SLIDE_SLOPE_ACCEL * slope * delta
 
-	# friction fades on slopes so momentum is kept while descending
 	var friction := SLIDE_FRICTION * (1.0 - SLIDE_SLOPE_FRICTION_REDUCTION * slope)
 	velocity.x = lerp(velocity.x, 0.0, delta * friction)
 	velocity.z = lerp(velocity.z, 0.0, delta * friction)
 
-	# cap the slide so long/steep slopes do not run away
 	var planar := Vector2(velocity.x, velocity.z)
 	if planar.length() > SLIDE_MAX_SPEED:
 		planar = planar.normalized() * SLIDE_MAX_SPEED
@@ -410,10 +423,6 @@ func handle_slide(delta):
 
 	slide_speed = planar.length()
 
-	# hug the slope: keep the horizontal speed but aim the vertical component
-	# along the incline, so the body glides parallel to the surface instead of
-	# travelling horizontally and dropping to re-contact each frame (that stepping
-	# is what makes it bob)
 	if is_on_floor() and floor_normal.y > 0.2:
 		velocity.y = -(velocity.x * floor_normal.x + velocity.z * floor_normal.z) / floor_normal.y
 
@@ -441,10 +450,13 @@ func handle_dive(delta: float) -> void:
 		camera.rotation.z = lerp(camera.rotation.z, deg_to_rad(0), delta * 8.0)
 		camera.transform.origin.z = -1.0
 	
-	var target_rot = deg_to_rad(-85)
+	var target_rot = deg_to_rad(-65)
 	var lerp_speed = 6.0
 	
 	mesh.rotation.x = lerp_angle(mesh.rotation.x, target_rot, lerp_speed * delta)
+	
+	if can_wallrun():
+		state = PlayerState.WALLRUN
 
 func handle_wallrun(delta: float) -> void:
 	wallrun_time += delta
@@ -474,7 +486,7 @@ func handle_wallrun(delta: float) -> void:
 		wall_dir = -wall_dir
 
 	# keep the momentum we arrived with (never below WALLRUN_SPEED, gently capped)
-	var along_speed := clampf(maxf(horizontal.length(), WALLRUN_SPEED), WALLRUN_SPEED, WALLRUN_SPEED * 1.5)
+	var along_speed: float = maxf(horizontal.length(), WALLRUN_SPEED)
 	var target_velocity := wall_dir * along_speed
 
 	velocity.x = lerp(velocity.x, target_velocity.x, delta * 6.0)
@@ -488,9 +500,9 @@ func handle_wallrun(delta: float) -> void:
 
 	var target_tilt := 0.0
 	if wall_side == -1:
-		target_tilt = deg_to_rad(15.0)
-	elif wall_side == 1:
 		target_tilt = deg_to_rad(-15.0)
+	elif wall_side == 1:
+		target_tilt = deg_to_rad(15.0)
 
 	camera.rotation.z = lerp(camera.rotation.z, target_tilt, delta * 8.0)
 
